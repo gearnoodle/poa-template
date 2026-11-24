@@ -170,7 +170,7 @@
 <aside id="side"></aside>
 <main>
 <article id="post"></article>
-<p class="poa-line">This is a Poa · part of the <a href="https://github.com/topics/poa">Poa network</a></p>
+<p class="poa-line">This is a Poa · part of the <a href="https://github.com/topics/poa">Poa network</a> · <a href="https://gearnoodle.github.io/poa-directory/">Browse the Poa directory</a></p>
 </main>
 
 <script src="markdown-it.min.js"></script>
@@ -206,6 +206,8 @@ const DISCOVER_KEEP_MINUTES = 30; // GitHub limits how often it answers, so keep
 // The Poa directory (github.com/gearnoodle/poa-directory). Use "" to leave it out, or point
 // it at any other list in the same format.
 const DIRECTORY = "https://raw.githubusercontent.com/gearnoodle/poa-directory/main/poas.md";
+// The directory's browsing page, linked from "what is poa?" and the "This is a Poa" line.
+const DIRECTORY_SITE = "https://gearnoodle.github.io/poa-directory/";
 
 const md = window.markdownit({ html: false, linkify: true });
 const HOME = new URL("poa.md", location.href).href;
@@ -369,7 +371,8 @@ function footer() {
   const tip = el("div", { class: "tip", id: "what-tip", role: "dialog", hidden: "" },
     el("p", {}, "Poa is a small personal site made of Markdown files. Every Poa lists the Poas its owner reads, and you find your way around by hopping from list to list."),
     el("p", {}, "No central server, no signup, no algorithm."),
-    el("a", { href: WHAT_IS_POA }, "Read more →"));
+    el("p", {}, el("a", { href: WHAT_IS_POA }, "Read more →")),
+    el("a", { href: DIRECTORY_SITE }, "Browse the Poa directory →"));
   const btn = el("button", { type: "button", class: "what", "aria-expanded": "false", "aria-controls": "what-tip" }, "what is poa?");
   const toggle = open => {
     tip.hidden = !open;
