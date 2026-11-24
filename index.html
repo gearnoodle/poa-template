@@ -199,9 +199,13 @@ const WHAT_IS_POA = readMoreUrl();
 const SEARCH_STEPS = 3;        // how many steps away from you
 const SEARCH_MAX_POAS = 150;   // stop after this many Poas
 const SEARCH_POSTS_EACH = 10;  // full text of each Poa's newest posts
-// "Everywhere" also asks GitHub for public repos named "poa" or tagged with the topic "poa".
-const DISCOVER_MAX_POAS = 100;    // check at most this many of them
+// "Everywhere" also asks GitHub for public repos named "poa" or tagged with the topic "poa",
+// and loads the Poa directory, an opt-in list people add their own Poa to (on any host).
+const DISCOVER_MAX_POAS = 100;    // check at most this many from each
 const DISCOVER_KEEP_MINUTES = 30; // GitHub limits how often it answers, so keep its answer a while
+// The Poa directory (github.com/gearnoodle/poa-directory). Use "" to leave it out, or point
+// it at any other list in the same format.
+const DIRECTORY = "https://raw.githubusercontent.com/gearnoodle/poa-directory/main/poas.md";
 
 const md = window.markdownit({ html: false, linkify: true });
 const HOME = new URL("poa.md", location.href).href;
@@ -620,19 +624,47 @@ async function walk(visit, alive) {
   return visited;
 }
 
-// ---------- GitHub discovery ----------
-// Finds Poas outside your network: public GitHub repos with the topic "poa", and repos
-// named "poa", that have GitHub Pages turned on. GitHub's search works without a login
-// but allows only a few searches a minute, so the answer is kept for a while.
+// ---------- Discovery ----------
+// Finds Poas outside your network, from two places:
+// - the Poa directory, a plain list people add their own Poa to (any host works);
+// - GitHub: public repos with the topic "poa", and repos named "poa", that have GitHub Pages
+//   turned on. GitHub's search works without a login but allows only a few searches a
+//   minute, so the answer is kept for a while.
 // Each address found is checked later: only a real poa.md counts.
 
 let discoveryPromise = null;
 function discover() {
-  if (!discoveryPromise) discoveryPromise = discoverNow();
+  if (!discoveryPromise) discoveryPromise = Promise.all([fromDirectory(), fromGitHub()])
+    .then(([directory, github]) => ({ directory, github }));
   return discoveryPromise;
 }
 
-async function discoverNow() {
+async function fromDirectory() {
+  if (!DIRECTORY) return { urls: [], ok: true };
+  try {
+    return { urls: parseDirectory(await fetchText(DIRECTORY)), ok: true };
+  } catch {
+    return { urls: [], ok: false };
+  }
+}
+
+// The directory is a Markdown list with one Poa address per line, like "Poas I read":
+//   - marta.github.io/poa
+//   - [Jordi](https://jordi.example.com/poa)
+// Anything after the address on a line is ignored, and so is every line that isn't a list item.
+function parseDirectory(text) {
+  const found = new Map();
+  for (const raw of splitHeader(text).body.split("\n")) {
+    const item = raw.trim().match(/^[-*+]\s+(.*)$/);
+    if (!item) continue;
+    const link = item[1].match(/^\[[^\]]*\]\(([^)\s]+)\)/);
+    const u = safePoaUrl(link ? link[1] : item[1].split(/\s/)[0]);
+    if (u && u.startsWith("https://")) found.set(poaKey(u), u);
+  }
+  return [...found.values()];
+}
+
+async function fromGitHub() {
   const KEY = "poa-discovery";
   try {
     const kept = JSON.parse(sessionStorage.getItem(KEY));
@@ -669,18 +701,28 @@ async function discoverNow() {
   return { urls, ok };
 }
 
-// Load the discovered Poas that the walk didn't already reach.
+// Load the discovered Poas that the walk didn't already reach. Each comes back as
+// { poa, from }, where from is "directory" or "github". A Poa listed in both counts as
+// "directory", since its owner chose to be listed there.
 async function discoveredPoas(visited, alive) {
-  const { urls, ok } = await discover();
-  if (!alive()) return { poas: [], ok };
-  const fresh = urls.filter(u => !visited.has(poaKey(u))).slice(0, DISCOVER_MAX_POAS);
-  const poas = await Promise.all(fresh.map(u => limit(() => loadPoa(u))));
-  return { poas: poas.filter(p => p && p.isPoa), ok };
+  const { directory, github } = await discover();
+  const result = { found: [], directoryOk: directory.ok, githubOk: github.ok };
+  if (!alive()) return result;
+  const seen = new Set(visited);
+  const pick = (urls, from) => urls
+    .filter(u => { const k = poaKey(u); if (seen.has(k)) return false; seen.add(k); return true; })
+    .slice(0, DISCOVER_MAX_POAS)
+    .map(url => ({ url, from }));
+  const fresh = [...pick(directory.urls, "directory"), ...pick(github.urls, "github")];
+  const loaded = await Promise.all(fresh.map(f =>
+    limit(() => loadPoa(f.url)).then(poa => poa && poa.isPoa ? { poa, from: f.from } : null)));
+  result.found = loaded.filter(Boolean);
+  return result;
 }
 
 // ---------- READ BY ----------
 // Every poa.md is public, so "who reads me" is worked out from the lists themselves:
-// the same walk as search, plus GitHub discovery. Nothing is sent anywhere.
+// the same walk as search, plus the Poa directory and GitHub discovery. Nothing is sent anywhere.
 
 let readersPromise = null;
 function findReaders() {
@@ -693,8 +735,8 @@ function findReaders() {
       if (poa.reads.some(a => { const u = safePoaUrl(a); return u && poaKey(u) === me; })) readers.set(k, poa);
     };
     const visited = await walk(check, () => true);
-    const { poas } = await discoveredPoas(visited, () => true);
-    poas.forEach(check);
+    const { found } = await discoveredPoas(visited, () => true);
+    found.forEach(f => check(f.poa));
     return [...readers.values()];
   })();
   return readersPromise;
@@ -729,7 +771,8 @@ async function renderSearch(q, cat, wide) {
   const tasks = [];
   let poaCount = 0;
 
-  const away = d => d < 0 ? "found on GitHub" : d === 0 ? "yours" : d === 1 ? "1 step away" : d + " steps away";
+  const away = r => r.from === "directory" ? "in the Poa directory" : r.from === "github" ? "found on GitHub"
+    : r.depth === 0 ? "yours" : r.depth === 1 ? "1 step away" : r.depth + " steps away";
 
   function drawFilters() {
     const counts = new Map();
@@ -759,7 +802,7 @@ async function renderSearch(q, cat, wide) {
     results.sort((a, b) => (a.rank - b.rank) || (b.date > a.date) - (b.date < a.date));
     drawFilters();
     list.replaceChildren(...results.filter(r => !filter || r.cat === filter).map(r => {
-      const meta = [r.href ? r.poa.name : "Poa", r.date ? formatDate(r.date) : null, r.cat, away(r.depth)]
+      const meta = [r.href ? r.poa.name : "Poa", r.date ? formatDate(r.date) : null, r.cat, away(r)]
         .filter(Boolean).join(" · ");
       const snip = el("div", { class: "r-snip" });
       if (r.snippet) {
@@ -793,18 +836,19 @@ async function renderSearch(q, cat, wide) {
     ];
   }
 
-  function searchPoa(poa, depth) {
+  // depth: steps away in your network. from: "directory" or "github" for Poas found outside it.
+  function searchPoa(poa, depth, from = null) {
     poaCount++;
     // Poas that say "search: no" are left out (their lists are still followed). Yours always shows.
     if (poa.noSearch && depth !== 0) return;
     const poaCat = poa.category || UNCATEGORIZED;
     if (fold(poa.name).includes(needle)) {
-      results.push({ poa, depth, rank: 0, title: poa.name, href: null, date: "", cat: poaCat });
+      results.push({ poa, depth, from, rank: 0, title: poa.name, href: null, date: "", cat: poaCat });
     }
     poa.posts.forEach((p, i) => {
       const titleHit = fold(p.title).includes(needle);
       const add = (extra, body) => results.push({
-        poa, depth, title: p.title, href: p.href,
+        poa, depth, from, title: p.title, href: p.href,
         date: (body && body.date) || dateFrom(p.href),
         // A post's own category wins; otherwise it has its Poa's.
         cat: (body && body.category) || poaCat,
@@ -836,14 +880,17 @@ async function renderSearch(q, cat, wide) {
   if (!alive()) return;
   const networkCount = poaCount;
 
-  let foundCount = 0, githubOk = true;
+  let dirCount = 0, gitHubCount = 0, directoryOk = true, githubOk = true;
   if (wide) {
-    status.textContent = "Asking GitHub for more Poas…";
-    const { poas, ok } = await discoveredPoas(visited, alive);
+    status.textContent = "Looking for more Poas…";
+    const d = await discoveredPoas(visited, alive);
     if (!alive()) return;
-    githubOk = ok;
-    for (const poa of poas) searchPoa(poa, -1);
-    foundCount = poas.length;
+    ({ directoryOk, githubOk } = d);
+    for (const { poa, from } of d.found) {
+      searchPoa(poa, -1, from);
+      if (poa.noSearch) continue;
+      if (from === "directory") dirCount++; else gitHubCount++;
+    }
   }
 
   await Promise.all(tasks);
@@ -851,10 +898,14 @@ async function renderSearch(q, cat, wide) {
   drawNow();
   let text = (results.length ? results.length + " found" : "Nothing found") +
     " in " + networkCount + (networkCount === 1 ? " Poa" : " Poas") + " up to " + SEARCH_STEPS + " steps away";
-  if (wide) text += githubOk
-    ? ", plus " + foundCount + " more found on GitHub."
-    : ". GitHub didn't answer just now, so Poas outside your network may be missing. Try again in a minute.";
-  else text += ".";
+  if (wide) {
+    const more = [];
+    if (DIRECTORY && directoryOk) more.push(dirCount + " in the Poa directory");
+    if (githubOk) more.push(gitHubCount + " found on GitHub");
+    text += more.length ? ", plus " + more.join(" and ") + "." : ".";
+    if (DIRECTORY && !directoryOk) text += " The Poa directory couldn't be reached just now.";
+    if (!githubOk) text += " GitHub didn't answer just now, so some Poas outside your network may be missing. Try again in a minute.";
+  } else text += ".";
   status.textContent = text;
 }
 
