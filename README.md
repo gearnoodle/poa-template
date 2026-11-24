@@ -8,7 +8,7 @@ A Poa is a small personal site made of Markdown files. Every Poa lists the other
 2. In the repository, go to **Settings → Pages**, choose **Deploy from a branch**, pick `main` and `/ (root)`, and save.
 3. Edit `poa.md`: put your name in it, and a category on the `category:` line (see below).
 4. On the repository page, click the ⚙ next to **About** and add the topic `poa`, so readers can find you.
-   Not on GitHub, or want to be sure? Add your address to the [Poa directory](https://github.com/gearnoodle/poa-directory). Anyone can browse the directory at [gearnoodle.github.io/poa-directory](https://gearnoodle.github.io/poa-directory/).
+   Not on GitHub, or want to be sure? Add your address to the Poa directory: [step-by-step instructions](https://github.com/gearnoodle/poa-directory#add-your-poa). Anyone can browse the directory at [gearnoodle.github.io/poa-directory](https://gearnoodle.github.io/poa-directory/).
 5. After a minute your Poa is live at `https://<your-username>.github.io/poa/`.
 
 Your Poa's address is `<your-username>.github.io/poa`. Give it to people so they can add you to their lists.
