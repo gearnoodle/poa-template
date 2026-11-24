@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>poa</title>
+<!-- These lines help readers, crawlers and search engines find this Poa.
+     To stay out of search, remove them (and the "This is a Poa" line below)
+     and add "search: no" to poa.md. -->
+<meta name="poa" content="1">
+<link rel="alternate" type="text/markdown" title="Poa" href="poa.md">
 <style>
   :root {
     --side-bg: #f3f4f6;
@@ -133,6 +138,25 @@
   .r-title { font-size: 20px; font-weight: 600; margin: 2px 0; display: block; }
   .r-snip { color: var(--muted); font-size: 16px; line-height: 1.5; }
   .r-snip mark { background: #fff1b8; color: var(--text); }
+  .scope { display: flex; gap: 16px; margin-top: 10px; font-size: 14px; color: var(--muted); }
+  .scope label { display: flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+  .scope input { margin: 0; accent-color: var(--accent); }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+  .filters button {
+    font: inherit; font-size: 14px; cursor: pointer;
+    padding: 4px 12px; border-radius: 999px;
+    border: 1px solid #d0d7de; background: #fff; color: var(--text);
+  }
+  .filters button:hover { border-color: var(--accent); }
+  .filters button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .cat {
+    display: inline-block; vertical-align: 1px; margin-left: 6px;
+    font-size: 12px; font-weight: 500; color: var(--muted);
+    border: 1px solid #d0d7de; border-radius: 999px; padding: 0 7px;
+  }
+  .meta a.cat-link { font-weight: 400; color: var(--muted); }
+  .poa-line { max-width: 680px; margin: 64px auto 0; font-size: 13px; color: var(--muted); }
+  .poa-line a { color: var(--muted); }
 
   @media (max-width: 760px) {
     body { flex-direction: column; }
@@ -144,7 +168,10 @@
 </head>
 <body>
 <aside id="side"></aside>
-<main><article id="post"></article></main>
+<main>
+<article id="post"></article>
+<p class="poa-line">This is a Poa · part of the <a href="https://github.com/topics/poa">Poa network</a></p>
+</main>
 
 <script src="markdown-it.min.js"></script>
 <script>
@@ -172,6 +199,9 @@ const WHAT_IS_POA = readMoreUrl();
 const SEARCH_STEPS = 3;        // how many steps away from you
 const SEARCH_MAX_POAS = 150;   // stop after this many Poas
 const SEARCH_POSTS_EACH = 10;  // full text of each Poa's newest posts
+// "Everywhere" also asks GitHub for public repos named "poa" or tagged with the topic "poa".
+const DISCOVER_MAX_POAS = 100;    // check at most this many of them
+const DISCOVER_KEEP_MINUTES = 30; // GitHub limits how often it answers, so keep its answer a while
 
 const md = window.markdownit({ html: false, linkify: true });
 const HOME = new URL("poa.md", location.href).href;
@@ -219,10 +249,19 @@ function parsePoa(text, url) {
   return {
     url,
     version: header.version,
+    isPoa: !!header.version,
     name: header.name || new URL(url).host,
+    category: cleanCategory(header.category),
+    noSearch: /^no$/i.test(header.search || ""),
     posts,
     reads,
   };
+}
+
+// Categories ignore capitals. A Poa or post without one is "uncategorized".
+const UNCATEGORIZED = "uncategorized";
+function cleanCategory(s) {
+  return (s || "").trim().toLowerCase();
 }
 
 // An address may be "name.github.io/poa", a full https URL, or a direct link to a .md file.
@@ -232,6 +271,20 @@ function poaUrl(address) {
   if (/\.md$/i.test(a)) return new URL(a).href;
   if (!a.endsWith("/")) a += "/";
   return new URL("poa.md", a).href;
+}
+
+// Like poaUrl, but returns null for an address that can't be read.
+function safePoaUrl(address) {
+  try { return poaUrl(address); } catch { return null; }
+}
+
+// One Poa can be written many ways: "a.github.io/poa", "https://a.github.io/poa/",
+// "https://a.github.io/poa/poa.md". This turns them all into "a.github.io/poa".
+function poaKey(url) {
+  return url.trim().toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/poa\.md$/, "")
+    .replace(/\/+$/, "");
 }
 
 function dateFrom(href) {
@@ -268,6 +321,25 @@ function loadPoa(url) {
 function route() {
   const p = new URLSearchParams(location.hash.slice(1));
   return { poa: p.get("poa") || HOME, post: p.get("post") };
+}
+
+// #q=TERM                     search
+// #q=TERM&cat=CAT             search, showing one category
+// #cat=CAT                    everything in one category (#cat= for everything)
+// &in=all                     search "Everywhere" instead of "My network"
+function searchLink(q, cat, wide) {
+  const p = new URLSearchParams();
+  if (q) p.set("q", q);
+  if (cat || (!q && cat != null)) p.set("cat", cat || "");
+  if (wide) p.set("in", "all");
+  return "#" + p.toString();
+}
+
+// "My network" or "Everywhere", remembered in this browser if it allows it.
+let everywhere = false;
+try { everywhere = localStorage.getItem("poa-scope") === "all"; } catch {}
+function rememberScope() {
+  try { localStorage.setItem("poa-scope", everywhere ? "all" : "network"); } catch {}
 }
 
 function link(poa, post) {
@@ -309,15 +381,33 @@ document.addEventListener("click", () => closeTip());
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeTip(); });
 
 function searchBox(q) {
-  const input = el("input", { type: "search", name: "q", placeholder: "Search Poas", "aria-label": "Search Poas" });
+  const input = el("input", { type: "search", name: "q", placeholder: "Search all Poas", "aria-label": "Search all Poas" });
   input.value = q || "";
-  const form = el("form", { class: "search", role: "search" }, input);
+  const scope = el("div", { class: "scope", role: "radiogroup", "aria-label": "Where to search" });
+  for (const [wide, label] of [[false, "My network"], [true, "Everywhere"]]) {
+    const radio = el("input", { type: "radio", name: "scope", value: wide ? "all" : "network" });
+    radio.checked = everywhere === wide;
+    radio.addEventListener("change", () => {
+      everywhere = wide;
+      rememberScope();
+      // If results are showing, run them again with the new choice.
+      const p = new URLSearchParams(location.hash.slice(1));
+      if (p.get("q") || p.has("cat")) location.hash = searchLink(p.get("q"), p.get("cat"), everywhere);
+    });
+    scope.append(el("label", {}, radio, label));
+  }
+  const form = el("form", { class: "search", role: "search" }, input, scope);
   form.addEventListener("submit", e => {
     e.preventDefault();
     const term = input.value.trim();
-    if (term) location.hash = new URLSearchParams({ q: term }).toString();
+    if (term) location.hash = searchLink(term, null, everywhere);
   });
   return form;
+}
+
+// A Poa's name, with its category as a small label.
+function nameWithCategory(poa) {
+  return poa.category ? [poa.name, el("span", { class: "cat" }, poa.category)] : [poa.name];
 }
 
 async function renderSide(poa, current, q) {
@@ -353,6 +443,27 @@ async function renderSide(poa, current, q) {
     return { url, a, li, date: "" };
   });
 
+  // READ BY: Poas whose "Poas I read" list includes this one. Shown on your own Poa only.
+  if (!visiting) {
+    side.append(el("h2", { class: "label" }, "Read by"));
+    const looking = el("p", { class: "empty" }, "Looking…");
+    side.append(looking);
+    findReaders().then(readers => {
+      if (!looking.isConnected) return;
+      if (!readers.length) {
+        looking.textContent = "Nobody found yet.";
+        return;
+      }
+      const list = el("ul", { class: "list" });
+      for (const r of readers.sort((a, b) => a.name.localeCompare(b.name))) {
+        list.append(el("li", {}, el("a", { href: link(r.url), class: "other" },
+          el("span", { class: "other-name" }, ...nameWithCategory(r)),
+          el("span", { class: "other-post" }, poaKey(r.url)))));
+      }
+      looking.replaceWith(list);
+    });
+  }
+
   side.append(footer());
 
   // Fill in others as they arrive, then sort newest first.
@@ -364,7 +475,7 @@ async function renderSide(poa, current, q) {
       post.textContent = "unreachable";
       return;
     }
-    name.textContent = other.name;
+    name.replaceChildren(...nameWithCategory(other));
     const latest = other.posts[0];
     post.textContent = latest ? latest.title : "No posts yet";
     if (latest) {
@@ -423,9 +534,12 @@ async function renderPost(poa, href) {
   const title = header.title || (listed && listed.title) || href;
   const date = header.date || dateFrom(href);
 
+  const category = cleanCategory(header.category) || poa.category;
   const meta = el("div", { class: "meta" },
     el("a", { href: link(poa.url) }, poa.name),
-    date ? " · " + formatDate(date) : null);
+    date ? " · " + formatDate(date) : null,
+    category ? " · " : null,
+    category ? el("a", { class: "cat-link", href: searchLink(null, category, everywhere), title: "More in " + category }, category) : null);
   const content = el("div", { class: "body" });
   content.innerHTML = md.render(body); // raw HTML is disabled in the renderer
   fixLinks(content, url, poa);
@@ -437,10 +551,14 @@ async function renderPost(poa, href) {
 
 // ---------- Search ----------
 
+// A post's plain text, plus the header fields search needs.
 const textCache = new Map();
 function loadBody(url) {
   if (!textCache.has(url)) {
-    textCache.set(url, fetchText(url).then(t => plain(splitHeader(t).body)).catch(() => null));
+    textCache.set(url, fetchText(url).then(t => {
+      const { header, body } = splitHeader(t);
+      return { text: plain(body), category: cleanCategory(header.category), date: header.date || "" };
+    }).catch(() => null));
   }
   return textCache.get(url);
 }
@@ -476,28 +594,173 @@ function limiter(n) {
 }
 const limit = limiter(6);
 
+// Walk the "Poas I read" lists outward from your own Poa, one step at a time, calling
+// visit(poa, depth) for each Poa reached. Returns the keys of the Poas visited.
+async function walk(visit, alive) {
+  const seen = new Set([poaKey(HOME)]);
+  const visited = new Set();
+  let layer = [HOME];
+  for (let depth = 0; layer.length && depth <= SEARCH_STEPS; depth++) {
+    const poas = await Promise.all(layer.map(u => limit(() => loadPoa(u))));
+    if (!alive()) return visited;
+    const next = [];
+    for (const poa of poas) {
+      if (!poa) continue;
+      visited.add(poaKey(poa.url));
+      visit(poa, depth);
+      for (const addr of poa.reads) {
+        const u = safePoaUrl(addr);
+        if (!u) continue;
+        const k = poaKey(u);
+        if (!seen.has(k) && seen.size < SEARCH_MAX_POAS) { seen.add(k); next.push(u); }
+      }
+    }
+    layer = depth < SEARCH_STEPS ? next : [];
+  }
+  return visited;
+}
+
+// ---------- GitHub discovery ----------
+// Finds Poas outside your network: public GitHub repos with the topic "poa", and repos
+// named "poa", that have GitHub Pages turned on. GitHub's search works without a login
+// but allows only a few searches a minute, so the answer is kept for a while.
+// Each address found is checked later: only a real poa.md counts.
+
+let discoveryPromise = null;
+function discover() {
+  if (!discoveryPromise) discoveryPromise = discoverNow();
+  return discoveryPromise;
+}
+
+async function discoverNow() {
+  const KEY = "poa-discovery";
+  try {
+    const kept = JSON.parse(sessionStorage.getItem(KEY));
+    if (kept && Date.now() - kept.at < DISCOVER_KEEP_MINUTES * 60000) return { urls: kept.urls, ok: true };
+  } catch {}
+
+  const found = new Map();
+  let ok = true;
+  for (const q of ["topic:poa", "poa in:name"]) {
+    try {
+      const params = new URLSearchParams({ q, sort: "updated", per_page: "100" });
+      const res = await fetch("https://api.github.com/search/repositories?" + params);
+      if (!res.ok) throw new Error(res.status);
+      const data = await res.json();
+      for (const repo of data.items || []) {
+        if (!repo.has_pages || !repo.owner) continue;
+        const name = String(repo.name);
+        if (q !== "topic:poa" && name.toLowerCase() !== "poa") continue;
+        const host = String(repo.owner.login).toLowerCase() + ".github.io";
+        // username.github.io is served at the root; any other repo in a folder named after it.
+        const url = name.toLowerCase() === host
+          ? "https://" + host + "/poa.md"
+          : "https://" + host + "/" + encodeURIComponent(name) + "/poa.md";
+        found.set(poaKey(url), url);
+      }
+    } catch {
+      ok = false;
+    }
+  }
+  const urls = [...found.values()];
+  if (ok) {
+    try { sessionStorage.setItem(KEY, JSON.stringify({ at: Date.now(), urls })); } catch {}
+  }
+  return { urls, ok };
+}
+
+// Load the discovered Poas that the walk didn't already reach.
+async function discoveredPoas(visited, alive) {
+  const { urls, ok } = await discover();
+  if (!alive()) return { poas: [], ok };
+  const fresh = urls.filter(u => !visited.has(poaKey(u))).slice(0, DISCOVER_MAX_POAS);
+  const poas = await Promise.all(fresh.map(u => limit(() => loadPoa(u))));
+  return { poas: poas.filter(p => p && p.isPoa), ok };
+}
+
+// ---------- READ BY ----------
+// Every poa.md is public, so "who reads me" is worked out from the lists themselves:
+// the same walk as search, plus GitHub discovery. Nothing is sent anywhere.
+
+let readersPromise = null;
+function findReaders() {
+  if (!readersPromise) readersPromise = (async () => {
+    const me = poaKey(HOME);
+    const readers = new Map();
+    const check = poa => {
+      const k = poaKey(poa.url);
+      if (k === me || poa.noSearch) return;
+      if (poa.reads.some(a => { const u = safePoaUrl(a); return u && poaKey(u) === me; })) readers.set(k, poa);
+    };
+    const visited = await walk(check, () => true);
+    const { poas } = await discoveredPoas(visited, () => true);
+    poas.forEach(check);
+    return [...readers.values()];
+  })();
+  return readersPromise;
+}
+
+// ---------- Search ----------
+
 let searchRun = 0;
 
-async function renderSearch(q) {
+// q: the search term ("" lists everything). cat: the category to show first (null for all).
+// wide: true for "Everywhere".
+async function renderSearch(q, cat, wide) {
   const run = ++searchRun;
+  const alive = () => run === searchRun;
   const article = document.getElementById("post");
+  const heading = el("h1", { class: "title" });
   const status = el("p", { class: "status" }, "Searching…");
+  const filters = el("div", { class: "filters", role: "group", "aria-label": "Categories" });
   const list = el("ul", { class: "results" });
-  article.replaceChildren(el("h1", { class: "title" }, "Search: " + q), status, list);
-  document.title = "Search: " + q + " · poa";
+  article.replaceChildren(heading, status, filters, list);
+
+  let filter = cat || "";
+  function setHeading() {
+    const t = q ? "Search: " + q : filter ? "Category: " + filter : "Everything";
+    heading.textContent = t;
+    document.title = t + " · poa";
+  }
+  setHeading();
 
   const needle = fold(q.trim());
   const results = [];
   const tasks = [];
   let poaCount = 0;
 
-  const away = d => d === 0 ? "yours" : d === 1 ? "1 step away" : d + " steps away";
+  const away = d => d < 0 ? "found on GitHub" : d === 0 ? "yours" : d === 1 ? "1 step away" : d + " steps away";
 
-  function draw() {
-    if (run !== searchRun) return;
+  function drawFilters() {
+    const counts = new Map();
+    for (const r of results) counts.set(r.cat, (counts.get(r.cat) || 0) + 1);
+    if (filter && !counts.has(filter)) counts.set(filter, 0);
+    const cats = [...counts.keys()].sort((a, b) =>
+      (a === UNCATEGORIZED) - (b === UNCATEGORIZED) || counts.get(b) - counts.get(a) || a.localeCompare(b));
+    const button = (key, label) => {
+      const b = el("button", { type: "button", "aria-pressed": String(filter === key) }, label);
+      b.addEventListener("click", () => {
+        filter = key;
+        // Update the address without running the search again.
+        history.replaceState(null, "", searchLink(q, filter || (q ? null : ""), wide));
+        setHeading();
+        drawNow();
+      });
+      return b;
+    };
+    filters.replaceChildren(...(results.length ? [
+      button("", "All (" + results.length + ")"),
+      ...cats.map(c => button(c, c + " (" + counts.get(c) + ")")),
+    ] : []));
+  }
+
+  function drawNow() {
+    if (!alive()) return;
     results.sort((a, b) => (a.rank - b.rank) || (b.date > a.date) - (b.date < a.date));
-    list.replaceChildren(...results.map(r => {
-      const meta = [r.poa.name, r.date ? formatDate(r.date) : null, away(r.depth)].filter(Boolean).join(" · ");
+    drawFilters();
+    list.replaceChildren(...results.filter(r => !filter || r.cat === filter).map(r => {
+      const meta = [r.href ? r.poa.name : "Poa", r.date ? formatDate(r.date) : null, r.cat, away(r.depth)]
+        .filter(Boolean).join(" · ");
       const snip = el("div", { class: "r-snip" });
       if (r.snippet) {
         const [before, hit, after] = r.snippet;
@@ -508,6 +771,14 @@ async function renderSearch(q) {
         el("span", { class: "r-title" }, r.title),
         r.snippet ? snip : null));
     }));
+  }
+
+  // Redraw at most once a frame while results stream in.
+  let drawPending = false;
+  function draw() {
+    if (drawPending) return;
+    drawPending = true;
+    requestAnimationFrame(() => { drawPending = false; drawNow(); });
   }
 
   function snippetOf(text) {
@@ -523,63 +794,81 @@ async function renderSearch(q) {
   }
 
   function searchPoa(poa, depth) {
+    poaCount++;
+    // Poas that say "search: no" are left out (their lists are still followed). Yours always shows.
+    if (poa.noSearch && depth !== 0) return;
+    const poaCat = poa.category || UNCATEGORIZED;
     if (fold(poa.name).includes(needle)) {
-      results.push({ poa, depth, rank: 0, title: poa.name, href: null, date: "" });
+      results.push({ poa, depth, rank: 0, title: poa.name, href: null, date: "", cat: poaCat });
     }
     poa.posts.forEach((p, i) => {
-      const date = dateFrom(p.href);
-      if (fold(p.title).includes(needle)) {
-        results.push({ poa, depth, rank: 1, title: p.title, href: p.href, date });
-      } else if (i < SEARCH_POSTS_EACH) {
-        tasks.push(limit(() => loadBody(new URL(p.href, poa.url).href)).then(text => {
-          if (run !== searchRun || !text) return;
-          const snippet = snippetOf(text);
-          if (snippet) {
-            results.push({ poa, depth, rank: 2, title: p.title, href: p.href, date, snippet });
-            draw();
-          }
-        }));
+      const titleHit = fold(p.title).includes(needle);
+      const add = (extra, body) => results.push({
+        poa, depth, title: p.title, href: p.href,
+        date: (body && body.date) || dateFrom(p.href),
+        // A post's own category wins; otherwise it has its Poa's.
+        cat: (body && body.category) || poaCat,
+        ...extra,
+      });
+      if (i >= SEARCH_POSTS_EACH) {
+        if (titleHit) add({ rank: 1 });
+        return;
       }
+      // Open the newest posts for their text and for a category of their own.
+      tasks.push(limit(() => loadBody(new URL(p.href, poa.url).href)).then(body => {
+        if (!alive()) return;
+        if (titleHit) {
+          add({ rank: 1 }, body);
+        } else if (body && needle) {
+          const snippet = snippetOf(body.text);
+          if (snippet) add({ rank: 2, snippet }, body);
+        }
+        draw();
+      }));
     });
     draw();
   }
 
-  // Walk the lists one step at a time.
-  const seen = new Set([HOME]);
-  let layer = [HOME];
-  for (let depth = 0; layer.length && depth <= SEARCH_STEPS; depth++) {
-    const poas = await Promise.all(layer.map(u => limit(() => loadPoa(u))));
-    if (run !== searchRun) return;
-    const next = [];
-    for (const poa of poas) {
-      if (!poa) continue;
-      poaCount++;
-      searchPoa(poa, depth);
-      for (const addr of poa.reads) {
-        const u = poaUrl(addr);
-        if (!seen.has(u) && seen.size < SEARCH_MAX_POAS) { seen.add(u); next.push(u); }
-      }
-    }
+  const visited = await walk((poa, depth) => {
+    searchPoa(poa, depth);
     status.textContent = "Searching… " + poaCount + " Poas so far";
-    layer = depth < SEARCH_STEPS ? next : [];
+  }, alive);
+  if (!alive()) return;
+  const networkCount = poaCount;
+
+  let foundCount = 0, githubOk = true;
+  if (wide) {
+    status.textContent = "Asking GitHub for more Poas…";
+    const { poas, ok } = await discoveredPoas(visited, alive);
+    if (!alive()) return;
+    githubOk = ok;
+    for (const poa of poas) searchPoa(poa, -1);
+    foundCount = poas.length;
   }
 
   await Promise.all(tasks);
-  if (run !== searchRun) return;
-  draw();
-  status.textContent = (results.length ? results.length + " found" : "Nothing found") +
-    " in " + poaCount + (poaCount === 1 ? " Poa" : " Poas") + " up to " + SEARCH_STEPS + " steps away.";
+  if (!alive()) return;
+  drawNow();
+  let text = (results.length ? results.length + " found" : "Nothing found") +
+    " in " + networkCount + (networkCount === 1 ? " Poa" : " Poas") + " up to " + SEARCH_STEPS + " steps away";
+  if (wide) text += githubOk
+    ? ", plus " + foundCount + " more found on GitHub."
+    : ". GitHub didn't answer just now, so Poas outside your network may be missing. Try again in a minute.";
+  else text += ".";
+  status.textContent = text;
 }
 
 // ---------- Main ----------
 
 async function show() {
-  const q = new URLSearchParams(location.hash.slice(1)).get("q");
-  if (q) {
+  const p = new URLSearchParams(location.hash.slice(1));
+  const q = p.get("q");
+  if (q || p.has("cat")) {
     searchRun++;
+    everywhere = p.get("in") === "all";
     const home = await loadPoa(HOME);
     if (home) renderSide(home, null, q);
-    renderSearch(q);
+    renderSearch(q || "", p.get("cat"), everywhere);
     return;
   }
   searchRun++; // stop any search still running
