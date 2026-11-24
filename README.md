@@ -6,8 +6,9 @@ A Poa is a small personal site made of Markdown files. Every Poa lists the other
 
 1. Go to [github.com/gearnoodle/poa-template](https://github.com/gearnoodle/poa-template) and press the green **Use this template** button, then **Create a new repository**. Name it `poa` and make it **Public**.
 2. In the repository, go to **Settings → Pages**, choose **Deploy from a branch**, pick `main` and `/ (root)`, and save.
-3. Edit `poa.md`: put your name in it.
-4. After a minute your Poa is live at `https://<your-username>.github.io/poa/`.
+3. Edit `poa.md`: put your name in it, and a category on the `category:` line (see below).
+4. On the repository page, click the ⚙ next to **About** and add the topic `poa`, so readers can find you.
+5. After a minute your Poa is live at `https://<your-username>.github.io/poa/`.
 
 Your Poa's address is `<your-username>.github.io/poa`. Give it to people so they can add you to their lists.
 
@@ -48,6 +49,7 @@ Add their addresses under "Poas I read" in `poa.md`, one per line:
 ---
 version: 1
 name: Manu Järvinen
+category: tech
 ---
 ## Posts
 - [Hello, Poa](2026-11-19-hello.md)
@@ -57,12 +59,16 @@ name: Manu Järvinen
 ```
 
 - The header sits between two `---` lines and holds `key: value` lines. `version: 1` is required. `name` is the name shown to readers.
+- `category` (optional) is one word for what the Poa is mostly about. Capitals don't matter. Any word works; some suggestions: food, travel, tech, books, art, music, life. A Poa without one counts as "uncategorized".
+- `search: no` (optional) asks readers and crawlers to leave this Poa out of search results, "read by" lists and indexes. Its "Poas I read" list can still be followed for hopping.
 - `## Posts` lists posts as Markdown links, newest first. Links are relative to `poa.md`.
 - `## Poas I read` lists other Poas' addresses, one per line.
 
-**Posts** are `.md` files with a header (`title`, `date` as `YYYY-MM-DD`) followed by Markdown (CommonMark). Readers must not run raw HTML in posts and only load images from the post's own site.
+**Posts** are `.md` files with a header (`title`, `date` as `YYYY-MM-DD`) followed by Markdown (CommonMark). A post can have its own `category` when it differs from its Poa's: a post's category is its own `category` if set, otherwise its Poa's. Readers must not run raw HTML in posts and only load images from the post's own site.
 
 **Hosting.** Any host works if it serves the files over HTTPS. For web-based readers, the host must also allow cross-site requests (the header `Access-Control-Allow-Origin: *`). GitHub Pages does this by default. On Codeberg Pages, a `_headers` file adds it; on your own Apache host, `.htaccess` does (see `welcome.md` in the template).
+
+**Being found.** The template's `index.html` carries `<meta name="poa" content="1">`, `<link rel="alternate" type="text/markdown" title="Poa" href="poa.md">` and a visible "This is a Poa" line, so crawlers and search engines can recognise a Poa from its homepage on any host. To stay out of search, remove them and add `search: no`.
 
 **Offline means gone.** When a Poa's host is unreachable, readers show it as unreachable. They don't keep or pass on copies.
 
@@ -70,4 +76,8 @@ name: Manu Järvinen
 
 `index.html` is a reader that shows your own Poa and lets you hop to the Poas you read. It's a single file with no build step.
 
-**Search** follows the "Poas I read" lists outward from your Poa, up to 3 steps away by default (the Poas you read, the Poas they read, and so on), and searches names, post titles and the text of each Poa's 10 newest posts. It runs entirely in your browser; nothing is collected anywhere. The limits are at the top of the script in `index.html`. `markdown-it.min.js` is the Markdown renderer it uses (MIT licence). `.nojekyll` tells GitHub Pages to serve the `.md` files as they are.
+**Search** follows the "Poas I read" lists outward from your Poa, up to 3 steps away by default (the Poas you read, the Poas they read, and so on), and searches names, post titles and the text of each Poa's 10 newest posts. With **Everywhere** chosen under the search box, it also asks GitHub for public repositories with the topic `poa` or named `poa` that have Pages turned on, and searches the ones that turn out to be Poas. GitHub answers only a few such questions a minute without a login, so the reader asks once and keeps the answer for 30 minutes. Results can be narrowed by category with the buttons above them, and a post's category links to everything in that category.
+
+**Read by** lists the Poas whose "Poas I read" list includes yours. It's worked out from the public lists, using the same walk and GitHub search, so a new reader shows up the next time the page runs and finds them.
+
+Everything runs in your browser; nothing is collected anywhere. The limits are at the top of the script in `index.html`. `markdown-it.min.js` is the Markdown renderer it uses (MIT licence). `.nojekyll` tells GitHub Pages to serve the `.md` files as they are.

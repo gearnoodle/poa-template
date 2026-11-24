@@ -47,7 +47,11 @@ The first line lets other Poas' readers fetch your files. The second makes brows
    - [My first post](2026-11-20-first-post.md)
    ```
 
-3. **Add Poas you read.** Under "Poas I read" in `poa.md`, add other Poas' addresses, one per line, like `marta.github.io/poa`. One is already there so you have somewhere to start.
-4. **Remove this post.** Delete `welcome.md` and its line in `poa.md`.
+3. **Pick a category for your Poa.** In `poa.md`, fill in the `category:` line with one word for what your Poa is mostly about, like `category: food`. Some ideas: food, travel, tech, books, art, music, life. Readers use it to filter search results, so people looking for food posts can find you. If a single post is about something else, give that post its own `category:` line in its header, under `title`.
+4. **Add Poas you read.** Under "Poas I read" in `poa.md`, add other Poas' addresses, one per line, like `marta.github.io/poa`. One is already there so you have somewhere to start.
+5. **Help others find you.** On your repository's page on GitHub, click the ⚙ next to **About** and add `poa` under **Topics**. Readers search GitHub for that topic to find Poas outside their own network.
+6. **Remove this post.** Delete `welcome.md` and its line in `poa.md`.
 
 Then give people your address, so they can add you to their lists.
+
+If you'd rather not be found by search, add `search: no` to the header of `poa.md`, and remove the lines marked as discovery lines near the top of `index.html` and the "This is a Poa" line. People you give your address to can still read you.
